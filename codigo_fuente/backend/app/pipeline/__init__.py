@@ -1,0 +1,1 @@
+from app.pipeline.classifier import process_and_classify_event
