@@ -13,16 +13,11 @@ def scrape_eventbrite_html_public() -> list[dict]:
     Scrapea las listas públicas de categorías y búsquedas por palabra clave de Eventbrite en Buenos Aires.
     Usa la extracción de scripts JSON-LD para robustez y de-duplica los resultados.
     """
-    categories = ["science-and-tech", "business", "tech"]
-    keywords = ["ia", "inteligencia-artificial", "tecnologia", "programacion", "startups", "pymes", "software", "desarrollo"]
+    categories = ["science-and-tech", "business", "tech", "family-and-education", "community"]
     
     targets = []
     for cat in categories:
         targets.append(("category", cat, f"https://www.eventbrite.com.ar/b/argentina--buenos-aires/{cat}/"))
-    for cat_extra in ["career", "education"]:
-        targets.append(("category_extra", cat_extra, f"https://www.eventbrite.com.ar/d/argentina--buenos-aires/{cat_extra}/"))
-    for kw in keywords:
-        targets.append(("search", kw, f"https://www.eventbrite.com.ar/d/argentina--buenos-aires/{kw}-eventos/"))
         
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
