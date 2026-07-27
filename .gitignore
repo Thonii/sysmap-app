@@ -23,3 +23,10 @@ Thumbs.db
 .idea/
 .vscode/
 *.sw?
+
+# Python environments and compilation
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+

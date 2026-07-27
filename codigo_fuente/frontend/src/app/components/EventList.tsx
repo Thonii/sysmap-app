@@ -15,6 +15,7 @@ interface EventData {
   longitude: number | null;
   distance_km: number | null;
   tags: string[];
+  description?: string | null;
 }
 
 interface EventListProps {
@@ -249,6 +250,27 @@ export const EventList: React.FC<EventListProps> = ({
                     #{tag}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* Descripción expandible */}
+            {isSelected && event.description && (
+              <div style={{
+                marginTop: '4px',
+                marginBottom: '18px',
+                padding: '14px',
+                fontSize: '0.85rem',
+                lineHeight: '1.6',
+                color: 'var(--text-secondary)',
+                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                borderLeft: '3px solid hsl(var(--primary))',
+                borderRadius: 'var(--radius-sm)',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                animation: 'fadeIn 0.25s ease-out'
+              }}>
+                {event.description}
               </div>
             )}
 

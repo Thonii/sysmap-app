@@ -187,6 +187,103 @@ def get_events(
             
     return events
 
+from pydantic import BaseModel
+
+class ImportUrlRequest(BaseModel):
+    url: str
+
+@app.post("/events/import-url")
+def import_event_by_url(payload: ImportUrlRequest, db: Session = Depends(get_db)):
+    """
+    Scrapea un evento individual por su URL, lo clasifica y lo guarda en la base de datos.
+    """
+    from app.scrapers.url_extractor import extract_event_from_url
+    from app.pipeline.classifier import process_and_classify_event
+    
+    url = str(payload.url)
+    try:
+        # 1. Extraer datos estructurados de la URL
+        event_data = extract_event_from_url(url)
+        
+        # 2. Verificar duplicados (source_platform + source_id)
+        existing_event = db.query(Event).filter(
+            Event.source_platform == event_data["source_platform"],
+            Event.source_id == event_data["source_id"]
+        ).first()
+        
+        # 3. Clasificación
+        if existing_event:
+            # Actualizar
+            existing_event.title = event_data["title"]
+            existing_event.description = event_data["description"]
+            existing_event.start_time = event_data["start_time"]
+            existing_event.end_time = event_data["end_time"]
+            existing_event.venue_name = event_data["venue_name"]
+            existing_event.address = event_data["address"]
+            existing_event.latitude = event_data["latitude"]
+            existing_event.longitude = event_data["longitude"]
+            existing_event.raw_data = event_data["raw_data"]
+            
+            is_tech = existing_event.is_tech
+            tags = existing_event.tags
+            logger.info(f"Evento importado existente actualizado: {event_data['title']}")
+            db.commit()
+            db.refresh(existing_event)
+            event_obj = existing_event
+        else:
+            # Clasificar nuevo
+            is_tech, tags = process_and_classify_event(
+                db,
+                event_data["title"],
+                event_data["description"]
+            )
+            
+            new_event = Event(
+                title=event_data["title"],
+                description=event_data["description"],
+                source_platform=event_data["source_platform"],
+                source_id=event_data["source_id"],
+                source_url=event_data["source_url"],
+                start_time=event_data["start_time"],
+                end_time=event_data["end_time"],
+                venue_name=event_data["venue_name"],
+                address=event_data["address"],
+                latitude=event_data["latitude"],
+                longitude=event_data["longitude"],
+                city=event_data["city"],
+                tags=tags,
+                raw_data=event_data["raw_data"],
+                is_tech=is_tech
+            )
+            db.add(new_event)
+            db.commit()
+            db.refresh(new_event)
+            event_obj = new_event
+            logger.info(f"Nuevo evento importado e insertado: {event_data['title']} (is_tech={is_tech})")
+            
+        # Retornar respuesta estructurada
+        return {
+            "success": True,
+            "message": f"Evento '{event_obj.title}' importado con éxito.",
+            "is_tech": event_obj.is_tech,
+            "tags": event_obj.tags,
+            "event": {
+                "id": event_obj.id,
+                "title": event_obj.title,
+                "source_platform": event_obj.source_platform,
+                "source_url": event_obj.source_url,
+                "start_time": event_obj.start_time,
+                "venue_name": event_obj.venue_name,
+                "address": event_obj.address,
+                "is_tech": event_obj.is_tech
+            }
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error importando evento por URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor al procesar la URL: {str(e)}")
+
 # Control de cooldown para evitar abuso del disparador de ingesta (Rate-Limiting)
 LAST_INGEST_TIME = None
 INGEST_COOLDOWN_MINUTES = 0.5

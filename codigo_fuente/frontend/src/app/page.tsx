@@ -9,6 +9,7 @@ import {
 import { EventList } from "./components/EventList";
 import { SubscriptionForm } from "./components/SubscriptionForm";
 import { ContributionSolidaria } from "./components/ContributionSolidaria";
+import { ImportEventBar } from "./components/ImportEventBar";
 
 interface EventData {
   id: string;
@@ -22,6 +23,7 @@ interface EventData {
   longitude: number | null;
   distance_km: number | null;
   tags: string[];
+  description?: string | null;
 }
 
 interface Preferences {
@@ -659,6 +661,23 @@ export default function Home() {
           <div className="layout-body-wrapper">
             {/* Columna de eventos */}
             <div className={`col-events ${activeTab === 'list' ? 'mobile-visible' : 'mobile-hidden'}`}>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "14px",
+                padding: "0 4px",
+                flexWrap: "wrap",
+                gap: "8px"
+              }}>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: 700, margin: 0, color: "#fff", fontFamily: "var(--font-display)" }}>
+                  Directorio
+                </h3>
+                <ImportEventBar 
+                  apiBaseUrl={API_BASE_URL} 
+                  onImportSuccess={() => fetchEvents(coords?.lat, coords?.lon)} 
+                />
+              </div>
               {loading ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 20px", gap: "12px", color: "var(--text-secondary)" }}>
                   <RefreshCw size={24} className="spin-anim" style={{ animation: "spin 1.5s linear infinite" }} />
@@ -668,7 +687,7 @@ export default function Home() {
                 <EventList
                   events={filteredEvents}
                   selectedEventId={selectedEventId}
-                  onEventSelect={setSelectedEventId}
+                  onEventSelect={(id) => setSelectedEventId((prev) => prev === id ? null : id)}
                   onTriggerIngest={handleTriggerIngest}
                   isIngesting={isIngesting}
                 />

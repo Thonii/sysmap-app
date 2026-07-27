@@ -10,141 +10,146 @@ logger = logging.getLogger(__name__)
 
 def scrape_eventbrite_html_public() -> list[dict]:
     """
-    Scrapea la lista pública de eventos de ciencia y tecnología de Eventbrite en Buenos Aires.
-    Usa la extracción de scripts JSON-LD para robustez.
+    Scrapea las listas públicas de varias categorías de Eventbrite en Buenos Aires.
+    Usa la extracción de scripts JSON-LD para robustez y de-duplica los resultados.
     """
-    url = "https://www.eventbrite.com.ar/b/argentina--buenos-aires/science-and-tech/"
+    categories = ["science-and-tech", "business", "tech"]
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8"
     }
     
-    events_found = []
+    events_by_id = {}
     
-    try:
-        logger.info(f"Iniciando scraping HTML público de Eventbrite: {url}")
-        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
-            response = client.get(url, headers=headers)
-            
-        if response.status_code != 200:
-            logger.error(f"Error cargando HTML de Eventbrite: Status {response.status_code}")
-            return []
-            
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        # Buscar bloques JSON-LD
-        ld_json_scripts = soup.find_all("script", type="application/ld+json")
-        logger.info(f"Bloques JSON-LD públicos encontrados en Eventbrite: {len(ld_json_scripts)}")
-        
-        raw_events = []
-        for script in ld_json_scripts:
-            try:
-                if not script.string:
-                    continue
-                content = json.loads(script.string)
+    for category in categories:
+        url = f"https://www.eventbrite.com.ar/b/argentina--buenos-aires/{category}/"
+        try:
+            logger.info(f"Iniciando scraping HTML público de Eventbrite (Categoría {category}): {url}")
+            with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+                response = client.get(url, headers=headers)
                 
-                if isinstance(content, list):
-                    for item in content:
-                        if isinstance(item, dict) and (item.get("@type") == "Event" or "Event" in str(item.get("@type"))):
-                            raw_events.append(item)
-                elif isinstance(content, dict):
-                    if content.get("@type") == "Event" or "Event" in str(content.get("@type")):
-                        raw_events.append(content)
-                    elif content.get("@type") == "ItemList":
-                        items = content.get("itemListElement", [])
-                        for element in items:
-                            item = element.get("item", {})
+            if response.status_code != 200:
+                logger.error(f"Error cargando HTML de Eventbrite para {category}: Status {response.status_code}")
+                continue
+                
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            # Buscar bloques JSON-LD
+            ld_json_scripts = soup.find_all("script", type="application/ld+json")
+            logger.info(f"Bloques JSON-LD públicos encontrados en {category}: {len(ld_json_scripts)}")
+            
+            raw_events = []
+            for script in ld_json_scripts:
+                try:
+                    if not script.string:
+                        continue
+                    content = json.loads(script.string)
+                    
+                    if isinstance(content, list):
+                        for item in content:
                             if isinstance(item, dict) and (item.get("@type") == "Event" or "Event" in str(item.get("@type"))):
                                 raw_events.append(item)
-            except Exception as e:
-                logger.error(f"Error parseando script JSON-LD de Eventbrite: {e}")
+                    elif isinstance(content, dict):
+                        if content.get("@type") == "Event" or "Event" in str(content.get("@type")):
+                            raw_events.append(content)
+                        elif content.get("@type") == "ItemList":
+                            items = content.get("itemListElement", [])
+                            for element in items:
+                                item = element.get("item", {})
+                                if isinstance(item, dict) and (item.get("@type") == "Event" or "Event" in str(item.get("@type"))):
+                                    raw_events.append(item)
+                except Exception as e:
+                    logger.error(f"Error parseando script JSON-LD de Eventbrite en {category}: {e}")
+                    
+            # Fallback básico si no hay JSON-LD en esta categoría
+            if not raw_events:
+                logger.warning(f"No se encontraron eventos estructurados para {category}. Usando fallback de tarjetas HTML...")
+                fallback_events = scrape_eventbrite_cards_fallback(soup)
+                for fe in fallback_events:
+                    events_by_id[fe["source_id"]] = fe
+                continue
                 
-        # Fallback básico si no hay JSON-LD
-        if not raw_events:
-            logger.warning("No se encontraron eventos estructurados. Usando fallback de tarjetas HTML...")
-            return scrape_eventbrite_cards_fallback(soup)
-            
-        for event_data in raw_events:
-            try:
-                title = event_data.get("name")
-                source_url = event_data.get("url")
-                
-                if not title or not source_url:
-                    continue
-                
-                match = re.search(r"-tickets-(\d+)", source_url) or re.search(r"/e/.*?(\d+)", source_url)
-                source_id = match.group(1) if match else str(hash(source_url))
-                
-                # Fechas
-                start_str = event_data.get("startDate")
-                end_str = event_data.get("endDate")
-                
-                start_time = None
-                if start_str:
-                    try:
-                        start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                    except ValueError:
+            for event_data in raw_events:
+                try:
+                    title = event_data.get("name")
+                    source_url = event_data.get("url")
+                    
+                    if not title or not source_url:
+                        continue
+                    
+                    match = re.search(r"-tickets-(\d+)", source_url) or re.search(r"/e/.*?(\d+)", source_url)
+                    source_id = match.group(1) if match else str(hash(source_url))
+                    
+                    # Fechas
+                    start_str = event_data.get("startDate")
+                    end_str = event_data.get("endDate")
+                    
+                    start_time = None
+                    if start_str:
+                        try:
+                            start_time = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        except ValueError:
+                            continue
+                            
+                    if not start_time:
                         continue
                         
-                if not start_time:
-                    continue
+                    end_time = None
+                    if end_str:
+                        try:
+                            end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                        except ValueError:
+                            pass
                     
-                end_time = None
-                if end_str:
-                    try:
-                        end_time = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-                    except ValueError:
-                        pass
-                
-                # Ubicación
-                location = event_data.get("location", {})
-                venue_name = "Online"
-                address = "Online"
-                latitude = None
-                longitude = None
-                
-                if isinstance(location, dict):
-                    venue_name = location.get("name", "A confirmar")
-                    address_info = location.get("address", {})
-                    if isinstance(address_info, dict):
-                        address = address_info.get("streetAddress") or address_info.get("name") or venue_name
-                    else:
-                        address = str(address_info) or venue_name
-                        
-                    geo = location.get("geo", {})
-                    if isinstance(geo, dict):
-                        latitude = geo.get("latitude")
-                        longitude = geo.get("longitude")
-                
-                if latitude:
-                    latitude = float(latitude)
-                if longitude:
-                    longitude = float(longitude)
-                
-                description = event_data.get("description", "")
-                
-                events_found.append({
-                    "title": title,
-                    "description": description,
-                    "source_platform": "eventbrite",
-                    "source_id": str(source_id),
-                    "source_url": source_url,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "venue_name": venue_name,
-                    "address": address,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "city": "Buenos Aires",
-                    "raw_data": event_data
-                })
-            except Exception as e:
-                logger.error(f"Error procesando evento estructurado de Eventbrite: {e}")
-                
-    except Exception as e:
-        logger.error(f"Error general scrapeando Eventbrite HTML: {e}")
-        
-    return events_found
+                    # Ubicación
+                    location = event_data.get("location", {})
+                    venue_name = "Online"
+                    address = "Online"
+                    latitude = None
+                    longitude = None
+                    
+                    if isinstance(location, dict):
+                        venue_name = location.get("name", "A confirmar")
+                        address_info = location.get("address", {})
+                        if isinstance(address_info, dict):
+                            address = address_info.get("streetAddress") or address_info.get("name") or venue_name
+                        else:
+                            address = str(address_info) or venue_name
+                            
+                        geo = location.get("geo", {})
+                        if isinstance(geo, dict):
+                            latitude = geo.get("latitude")
+                            longitude = geo.get("longitude")
+                    
+                    if latitude:
+                        latitude = float(latitude)
+                    if longitude:
+                        longitude = float(longitude)
+                    
+                    description = event_data.get("description", "")
+                    
+                    events_by_id[str(source_id)] = {
+                        "title": title,
+                        "description": description,
+                        "source_platform": "eventbrite",
+                        "source_id": str(source_id),
+                        "source_url": source_url,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "venue_name": venue_name,
+                        "address": address,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "city": "Buenos Aires",
+                        "raw_data": event_data
+                    }
+                except Exception as e:
+                    logger.error(f"Error procesando evento estructurado de Eventbrite: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error general scrapeando Eventbrite categoría {category}: {e}")
+            
+    return list(events_by_id.values())
 
 def scrape_eventbrite_cards_fallback(soup: BeautifulSoup) -> list[dict]:
     events = []
