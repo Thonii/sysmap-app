@@ -265,6 +265,94 @@ def _extract_luma(url: str, headers: dict) -> dict:
     html_content = safe_download_html(url, headers)
     
     soup = BeautifulSoup(html_content, "html.parser")
+    
+    # 1. Intentar con JSON-LD primero (Contiene descripción completa, hora con offset y geo coordinates)
+    ld_json_scripts = soup.find_all("script", type="application/ld+json")
+    ld_event_data = None
+    for script in ld_json_scripts:
+        try:
+            if not script.string:
+                continue
+            content = json.loads(script.string)
+            if isinstance(content, dict) and content.get("@type") == "Event":
+                ld_event_data = content
+                break
+        except Exception:
+            pass
+            
+    if ld_event_data:
+        logger.info("Información estructurada JSON-LD de Event encontrada en Luma.")
+        title = sanitize_string(ld_event_data.get("name", ""))
+        description = sanitize_string(ld_event_data.get("description", ""))
+        
+        slug = url.split("/")[-1].split("?")[0]
+        source_id = slug or str(hash(url))
+        
+        start_str = ld_event_data.get("startDate")
+        end_str = ld_event_data.get("endDate")
+        
+        start_time = None
+        if start_str:
+            try:
+                clean_start = start_str.replace("Z", "+00:00")
+                start_time = datetime.fromisoformat(clean_start)
+            except ValueError:
+                pass
+                
+        if not start_time:
+            start_time = datetime.now()
+            
+        end_time = None
+        if end_str:
+            try:
+                clean_end = end_str.replace("Z", "+00:00")
+                end_time = datetime.fromisoformat(clean_end)
+            except ValueError:
+                pass
+                
+        location = ld_event_data.get("location", {})
+        venue_name = "Online/A confirmar"
+        address = "Online"
+        latitude = None
+        longitude = None
+        
+        if isinstance(location, dict):
+            venue_name = sanitize_string(location.get("name") or "A confirmar")
+            address_info = location.get("address", {})
+            if isinstance(address_info, dict):
+                address = sanitize_string(address_info.get("streetAddress") or address_info.get("name") or venue_name)
+            else:
+                address = sanitize_string(str(address_info) or venue_name)
+                
+            geo = location.get("geo", {})
+            if isinstance(geo, dict):
+                try:
+                    lat = geo.get("latitude")
+                    lon = geo.get("longitude")
+                    if lat is not None:
+                        latitude = float(lat)
+                    if lon is not None:
+                        longitude = float(lon)
+                except (ValueError, TypeError):
+                    pass
+                    
+        return {
+            "title": title,
+            "description": description,
+            "source_platform": "luma",
+            "source_id": str(source_id),
+            "source_url": url,
+            "start_time": start_time,
+            "end_time": end_time,
+            "venue_name": venue_name,
+            "address": address,
+            "latitude": latitude,
+            "longitude": longitude,
+            "city": "Buenos Aires",
+            "raw_data": ld_event_data
+        }
+
+    # 2. Fallback a __NEXT_DATA__
     next_data_script = soup.find("script", id="__NEXT_DATA__")
     
     event_data = None
@@ -276,7 +364,9 @@ def _extract_luma(url: str, headers: dict) -> dict:
             if "event" in page_props:
                 event_data = page_props["event"]
             elif "initialData" in page_props:
-                event_data = page_props["initialData"].get("event")
+                initial_data = page_props["initialData"]
+                if isinstance(initial_data, dict):
+                    event_data = initial_data.get("data", {}).get("event") or initial_data.get("event")
             else:
                 # Búsqueda recursiva en JSON
                 def find_event_obj(d):
@@ -298,7 +388,7 @@ def _extract_luma(url: str, headers: dict) -> dict:
             logger.error(f"Error parseando __NEXT_DATA__ en importación de Luma: {e}")
             
     if not event_data:
-        # Fallback básico si no hay __NEXT_DATA__
+        # Fallback básico si no hay __NEXT_DATA__ ni JSON-LD
         title_el = soup.find("h1") or soup.find("title")
         title = sanitize_string(title_el.text if title_el else "Evento Luma")
         
@@ -320,7 +410,7 @@ def _extract_luma(url: str, headers: dict) -> dict:
             "raw_data": {"fallback_import": True}
         }
 
-    # Extraer campos si tenemos event_data estructurado
+    # Extraer campos si tenemos event_data estructurado de __NEXT_DATA__
     title = sanitize_string(event_data.get("name", ""))
     source_id = event_data.get("api_id") or event_data.get("id") or url.split("/")[-1].split("?")[0]
     
@@ -376,6 +466,7 @@ def _extract_luma(url: str, headers: dict) -> dict:
         "city": "Buenos Aires",
         "raw_data": event_data
     }
+
 
 def _extract_meetup(url: str, headers: dict) -> dict:
     logger.info(f"Extrayendo evento individual de Meetup seguro: {url}")

@@ -172,6 +172,15 @@ def get_events(
                 event_dict = event.__dict__.copy()
                 event_dict.pop('_sa_instance_state', None)
                 event_dict["distance_km"] = round(distance, 2)
+                
+                # Serializar fechas a ISO strings con offset timezone explícito
+                if event_dict.get("start_time") and isinstance(event_dict["start_time"], datetime):
+                    dt = event_dict["start_time"]
+                    event_dict["start_time"] = dt.replace(tzinfo=timezone.utc).isoformat() if dt.tzinfo is None else dt.isoformat()
+                if event_dict.get("end_time") and isinstance(event_dict["end_time"], datetime):
+                    dt = event_dict["end_time"]
+                    event_dict["end_time"] = dt.replace(tzinfo=timezone.utc).isoformat() if dt.tzinfo is None else dt.isoformat()
+                
                 events.append(event_dict)
                 
         # Ordenar por distancia de menor a mayor
@@ -183,6 +192,15 @@ def get_events(
             event_dict = event.__dict__.copy()
             event_dict.pop('_sa_instance_state', None)
             event_dict["distance_km"] = None
+            
+            # Serializar fechas a ISO strings con offset timezone explícito
+            if event_dict.get("start_time") and isinstance(event_dict["start_time"], datetime):
+                dt = event_dict["start_time"]
+                event_dict["start_time"] = dt.replace(tzinfo=timezone.utc).isoformat() if dt.tzinfo is None else dt.isoformat()
+            if event_dict.get("end_time") and isinstance(event_dict["end_time"], datetime):
+                dt = event_dict["end_time"]
+                event_dict["end_time"] = dt.replace(tzinfo=timezone.utc).isoformat() if dt.tzinfo is None else dt.isoformat()
+            
             events.append(event_dict)
             
     return events
@@ -272,7 +290,8 @@ def import_event_by_url(payload: ImportUrlRequest, db: Session = Depends(get_db)
                 "title": event_obj.title,
                 "source_platform": event_obj.source_platform,
                 "source_url": event_obj.source_url,
-                "start_time": event_obj.start_time,
+                "start_time": event_obj.start_time.replace(tzinfo=timezone.utc).isoformat() if event_obj.start_time.tzinfo is None else event_obj.start_time.isoformat(),
+                "end_time": event_obj.end_time.replace(tzinfo=timezone.utc).isoformat() if event_obj.end_time and event_obj.end_time.tzinfo is None else (event_obj.end_time.isoformat() if event_obj.end_time else None),
                 "venue_name": event_obj.venue_name,
                 "address": event_obj.address,
                 "is_tech": event_obj.is_tech
