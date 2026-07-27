@@ -19,8 +19,10 @@ def scrape_eventbrite_html_public() -> list[dict]:
     targets = []
     for cat in categories:
         targets.append(("category", cat, f"https://www.eventbrite.com.ar/b/argentina--buenos-aires/{cat}/"))
+    for cat_extra in ["career", "education"]:
+        targets.append(("category_extra", cat_extra, f"https://www.eventbrite.com.ar/d/argentina--buenos-aires/{cat_extra}/"))
     for kw in keywords:
-        targets.append(("search", kw, f"https://www.eventbrite.com.ar/d/argentina--buenos-aires/{kw}/"))
+        targets.append(("search", kw, f"https://www.eventbrite.com.ar/d/argentina--buenos-aires/{kw}-eventos/"))
         
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
