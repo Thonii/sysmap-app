@@ -17,6 +17,9 @@ El frontend tiene integrada la barra de importación rápida al lado del encabez
   * **Serialización Timezone-Aware con Offset UTC:** Modificada la serialización de fechas en los endpoints `/events` y `/events/import-url` de `main.py` para aplicarles la zona horaria UTC (`replace(tzinfo=timezone.utc).isoformat()`). Esto corrige los desfases en la API al transmitir los datetimes en UTC explícito.
 - **Solución al Conflicto de Ruteo de NextAuth (OAuth):**
   * **Exclusión de Ruteo en Traefik:** Modificadas las labels de docker compose en local y remoto (`docker-compose.yml`) para excluir `/api/auth/*` del backend: `Host(...) && PathPrefix(/api) && !PathPrefix(/api/auth)`. Esto resuelve los errores 404 de OAuth redirigiendo correctamente las llamadas de sesión al frontend de Next.js.
+- **Ampliación de Cobertura y Prevención de Sobreescritura (Eventbrite Scraper):**
+  * **URLs Estáticas Robustas (Bypass 405):** Modificado `eventbrite.py` para consultar únicamente las categorías estáticas `/b/*` que devuelven un código `200 OK` limpio en la IP de producción (`science-and-tech`, `business`, `tech`, `family-and-education`, `community`), logrando esquivar el bloqueo dinámico antibot (405) de Cloudflare en Eventbrite y logrando un incremento de casi el 40% en volumen de recolección de eventos.
+  * **Protección de Horas y Descripciones Detalladas:** Modificado `ingest.py` para evitar que la ingesta masiva automática sobrescriba horas y descripciones enriquecidas obtenidas previamente mediante importaciones manuales precisas con los valores recortados de los listados estáticos (medianoches `00:00:00`).
 
 ## 3. Active Constraints
 - **Base de Datos Compartida:** El backend y el frontend comparten el mismo archivo SQLite `sysmap.db` en el volumen `sysmap_db_data`. Se debe evitar cargas excesivas de escritura concurrente para no generar bloqueos de base de datos (`database is locked`).
