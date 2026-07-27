@@ -27,7 +27,7 @@ def ingest_events_pipeline(db: Session) -> dict:
     
     for event_data in raw_events:
         try:
-            from datetime import timezone
+            from datetime import timezone, time
             # Normalizar datetimes a UTC naive para almacenamiento estándar en SQLite
             if event_data.get("start_time"):
                 if event_data["start_time"].tzinfo:
@@ -51,9 +51,26 @@ def ingest_events_pipeline(db: Session) -> dict:
             if existing_event:
                 # Si ya existe, actualizamos los datos dinámicos (fecha, ubicación, descripción)
                 existing_event.title = event_data["title"]
-                existing_event.description = event_data["description"]
-                existing_event.start_time = event_data["start_time"]
-                existing_event.end_time = event_data["end_time"]
+                
+                # Evitar pisar descripción detallada con descripción genérica vacía o muy corta
+                if event_data["description"] and len(event_data["description"]) > len(existing_event.description or ""):
+                    existing_event.description = event_data["description"]
+                
+                # Evitar pisar hora precisa (distinta de 00:00:00) con hora de medianoche por defecto (00:00:00)
+                new_start = event_data["start_time"]
+                if new_start:
+                    is_new_midnight = new_start.time() == time.min
+                    is_exist_midnight = existing_event.start_time.time() == time.min if existing_event.start_time else True
+                    if not is_new_midnight or is_exist_midnight:
+                        existing_event.start_time = new_start
+                        
+                new_end = event_data["end_time"]
+                if new_end:
+                    is_new_end_midnight = new_end.time() == time.min
+                    is_exist_end_midnight = existing_event.end_time.time() == time.min if existing_event.end_time else True
+                    if not is_new_end_midnight or is_exist_end_midnight:
+                        existing_event.end_time = new_end
+                        
                 existing_event.venue_name = event_data["venue_name"]
                 existing_event.address = event_data["address"]
                 existing_event.latitude = event_data["latitude"]
