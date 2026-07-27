@@ -137,6 +137,7 @@ def extract_event_from_url(url: str) -> dict:
     Descarga una URL de evento de Eventbrite, Luma o Meetup,
     extrae sus detalles y los formatea según el esquema del sistema de forma segura.
     """
+    from datetime import timezone
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
@@ -146,14 +147,29 @@ def extract_event_from_url(url: str) -> dict:
     url_lower = url.lower()
     
     if "eventbrite" in url_lower:
-        return _extract_eventbrite(url, headers)
+        event = _extract_eventbrite(url, headers)
     elif "lu.ma" in url_lower or "luma.com" in url_lower:
-        return _extract_luma(url, headers)
+        event = _extract_luma(url, headers)
     elif "meetup.com" in url_lower:
-        return _extract_meetup(url, headers)
+        event = _extract_meetup(url, headers)
     else:
         # Esta validación también se hace en validate_and_resolve_url pero se deja aquí por robustez
         raise ValueError("Plataforma no soportada. Solo se admiten enlaces oficiales de Eventbrite, Luma y Meetup.")
+
+    # Normalizar datetimes a UTC naive para almacenamiento estándar en SQLite
+    if event.get("start_time"):
+        if event["start_time"].tzinfo:
+            event["start_time"] = event["start_time"].astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            event["start_time"] = event["start_time"].replace(tzinfo=None)
+            
+    if event.get("end_time"):
+        if event["end_time"].tzinfo:
+            event["end_time"] = event["end_time"].astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            event["end_time"] = event["end_time"].replace(tzinfo=None)
+            
+    return event
 
 def _extract_eventbrite(url: str, headers: dict) -> dict:
     logger.info(f"Extrayendo evento individual de Eventbrite seguro: {url}")

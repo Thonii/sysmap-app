@@ -73,7 +73,8 @@ export const EventList: React.FC<EventListProps> = ({
       day: 'numeric',
       month: 'long',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'America/Buenos_Aires'
     });
   };
 

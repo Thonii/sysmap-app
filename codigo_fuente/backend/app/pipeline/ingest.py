@@ -27,6 +27,20 @@ def ingest_events_pipeline(db: Session) -> dict:
     
     for event_data in raw_events:
         try:
+            from datetime import timezone
+            # Normalizar datetimes a UTC naive para almacenamiento estándar en SQLite
+            if event_data.get("start_time"):
+                if event_data["start_time"].tzinfo:
+                    event_data["start_time"] = event_data["start_time"].astimezone(timezone.utc).replace(tzinfo=None)
+                else:
+                    event_data["start_time"] = event_data["start_time"].replace(tzinfo=None)
+                    
+            if event_data.get("end_time"):
+                if event_data["end_time"].tzinfo:
+                    event_data["end_time"] = event_data["end_time"].astimezone(timezone.utc).replace(tzinfo=None)
+                else:
+                    event_data["end_time"] = event_data["end_time"].replace(tzinfo=None)
+
             # 2. Verificar duplicados (source_platform + source_id)
             existing_event = db.query(Event).filter(
                 Event.source_platform == event_data["source_platform"],
