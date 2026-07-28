@@ -14,9 +14,14 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
+    async session({ session, user, token }) {
       if (session.user) {
-        (session.user as any).id = user.id;
+        const userId = typeof user?.id === "string" ? user.id :
+                       typeof token?.sub === "string" ? token.sub :
+                       typeof token?.id === "string" ? token.id : undefined;
+        if (userId) {
+          (session.user as { id?: string }).id = userId;
+        }
       }
       return session;
     },

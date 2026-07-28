@@ -3,13 +3,32 @@
 import { useState, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { 
-  List, Mail, RefreshCw, Compass, AlertCircle, Search, 
-  Settings, LogIn, LogOut, Check, Sliders, Map 
+  List, Mail, RefreshCw, AlertCircle, Search, 
+  Settings, LogIn, LogOut, Check, Sliders,
+  X, CheckCircle
 } from "lucide-react";
 import { EventList } from "./components/EventList";
 import { SubscriptionForm } from "./components/SubscriptionForm";
 import { ContributionSolidaria } from "./components/ContributionSolidaria";
 import { ImportEventBar } from "./components/ImportEventBar";
+
+// Custom Github Icon SVG Component since it's not exported by lucide-react in this version
+const GithubIcon = ({ size = 16 }: { size?: number }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4" />
+    <path d="M9 18c-4.51 2-5-2-7-2" />
+  </svg>
+);
 
 interface EventData {
   id: string;
@@ -79,10 +98,6 @@ export default function Home() {
   const [selectedPlatform, setSelectedPlatform] = useState<'all' | 'luma' | 'meetup' | 'eventbrite'>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  // Ubicación del navegador (Local-First y Opt-in)
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [locating, setLocating] = useState(false);
-
   // Panel y datos de preferencias del usuario autenticado
   const [showPrefPanel, setShowPrefPanel] = useState(false);
   const [preferences, setPreferences] = useState<Preferences>({
@@ -92,6 +107,50 @@ export default function Home() {
     longitude: null,
   });
   const [prefSaveStatus, setPrefSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // === ESTADOS PARA FAVORITOS (NextAuth) ===
+  const [savedEventIds, setSavedEventIds] = useState<string[]>([]);
+
+  // === ESTADOS PARA LEADS B2B ===
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [leadName, setLeadName] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadCompany, setLeadCompany] = useState("");
+  const [leadEventUrl, setLeadEventUrl] = useState("");
+  const [leadNotes, setLeadNotes] = useState("");
+  const [leadStatus, setLeadStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [leadError, setLeadError] = useState("");
+
+  // === ESTADO DE TOAST NOTIFICATIONS ===
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error') => {
+    setToast({ message, type });
+  };
+
+  // Ocultar Toast automáticamente tras 4 segundos
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Cargar eventos guardados al iniciar sesión
+  useEffect(() => {
+    if (session) {
+      fetch("/api/saved-events")
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.eventIds) {
+            setSavedEventIds(data.eventIds);
+          }
+        })
+        .catch(err => console.error("Error cargando favoritos:", err));
+    } else {
+      setSavedEventIds([]);
+    }
+  }, [session]);
 
   // 1. Obtener eventos
   const fetchEvents = async (lat?: number, lon?: number) => {
@@ -116,7 +175,7 @@ export default function Home() {
       const data = await response.json();
       setEvents(data);
       localStorage.setItem("sysmap_events_cache", JSON.stringify(data));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setError("Error de conexión. Cargando datos locales.");
       const cached = localStorage.getItem("sysmap_events_cache");
@@ -141,8 +200,8 @@ export default function Home() {
       }
       // Espera de 11 segundos
       await new Promise(resolve => setTimeout(resolve, 11000));
-      await fetchEvents(coords?.lat, coords?.lon);
-    } catch (err: any) {
+      await fetchEvents();
+    } catch (err: unknown) {
       console.error(err);
       setError("No se pudo completar la sincronización automática.");
     } finally {
@@ -150,59 +209,36 @@ export default function Home() {
     }
   };
 
-  // 3. Activar búsqueda geolocalizada (Opt-in)
-  const handleRequestLocation = () => {
-    setLocating(true);
-    if (!navigator.geolocation) {
-      setError("La geolocalización no está soportada por tu navegador.");
-      setLocating(false);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        setCoords({ lat, lon });
-        setLocating(false);
-        fetchEvents(lat, lon);
-        
-        // Si está logueado, autocompletar coordenadas de preferencias
-        if (session) {
-          setPreferences(prev => ({
-            ...prev,
-            latitude: lat,
-            longitude: lon
-          }));
-        }
-      },
-      (error) => {
-        console.error(error);
-        setError("Permiso denegado o error de geolocalización. Usando Buenos Aires centro.");
-        setLocating(false);
-        fetchEvents();
-      },
-      { timeout: 10000 }
-    );
-  };
-
   // 4. Cargar preferencias del usuario al iniciar sesión
   useEffect(() => {
     if (session) {
       fetch("/api/preferences")
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          return res.json();
+        })
         .then(data => {
-          if (!data.error) {
-            setPreferences(data);
+          if (data && !data.error) {
+            setPreferences({
+              tags: Array.isArray(data.tags) ? data.tags : [],
+              radiusKm: typeof data.radiusKm === "number" ? data.radiusKm : 15.0,
+              latitude: typeof data.latitude === "number" ? data.latitude : null,
+              longitude: typeof data.longitude === "number" ? data.longitude : null,
+            });
           }
         })
         .catch(err => console.error("Error cargando preferencias:", err));
     }
   }, [session]);
 
-  // Ejecución inicial
+  // Ejecución inicial diferida para evitar setState en fase de render síncrona
   useEffect(() => {
-    fetchEvents();
+    const timer = setTimeout(() => {
+      fetchEvents();
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   // Guardar preferencias del usuario en SQLite
@@ -218,6 +254,7 @@ export default function Home() {
       });
       if (response.ok) {
         setPrefSaveStatus('saved');
+        showToast("Preferencias del boletín guardadas.", "success");
         setTimeout(() => setPrefSaveStatus('idle'), 3000);
       } else {
         setPrefSaveStatus('error');
@@ -225,6 +262,94 @@ export default function Home() {
     } catch (err) {
       console.error(err);
       setPrefSaveStatus('error');
+    }
+  };
+
+  // Guardar/Unsave evento (NextAuth callback)
+  const handleToggleSave = async (eventId: string) => {
+    if (!session) {
+      showToast("Inicia sesión con Google para guardar eventos.", "info");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/saved-events", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ eventId })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.saved) {
+          setSavedEventIds(prev => [...prev, eventId]);
+          showToast(data.message || "Evento guardado.", "success");
+        } else {
+          setSavedEventIds(prev => prev.filter(id => id !== eventId));
+          showToast(data.message || "Evento eliminado de guardados.", "success");
+        }
+      } else {
+        showToast(data.error || "No se pudo actualizar el favorito.", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error de conexión al guardar evento.", "error");
+    }
+  };
+
+  // Enviar formulario de Leads B2B
+  const handleLeadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!leadName || !leadEmail) {
+      setLeadError("Nombre y correo electrónico son requeridos.");
+      setLeadStatus("error");
+      return;
+    }
+
+    setLeadStatus("submitting");
+    setLeadError("");
+
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: leadName,
+          email: leadEmail,
+          company: leadCompany,
+          eventUrl: leadEventUrl,
+          notes: leadNotes
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setLeadStatus("success");
+        showToast("¡Solicitud registrada con éxito!", "success");
+        setLeadName("");
+        setLeadEmail("");
+        setLeadCompany("");
+        setLeadEventUrl("");
+        setLeadNotes("");
+        
+        setTimeout(() => {
+          setShowLeadModal(false);
+          setLeadStatus("idle");
+        }, 2200);
+      } else {
+        setLeadStatus("error");
+        setLeadError(data.error || "Ocurrió un error.");
+      }
+    } catch (err) {
+      console.error(err);
+      setLeadStatus("error");
+      setLeadError("Error al conectar con el servidor.");
     }
   };
 
@@ -249,6 +374,8 @@ export default function Home() {
     return true;
   });
 
+  const hasActiveFilters = searchQuery !== "" || selectedPlatform !== "all" || selectedTag !== null;
+
   // Tags dinámicos únicos obtenidos de los eventos
   const availableTags = Array.from(
     new Set(events.flatMap(event => event.tags || []))
@@ -256,9 +383,10 @@ export default function Home() {
 
   const togglePreferenceTag = (tag: string) => {
     setPreferences(prev => {
-      const tags = prev.tags.includes(tag)
-        ? prev.tags.filter(t => t !== tag)
-        : [...prev.tags, tag];
+      const currentTags = Array.isArray(prev?.tags) ? prev.tags : [];
+      const tags = currentTags.includes(tag)
+        ? currentTags.filter(t => t !== tag)
+        : [...currentTags, tag];
       return { ...prev, tags };
     });
   };
@@ -282,103 +410,182 @@ export default function Home() {
         borderRadius: "var(--radius-lg)",
         backgroundColor: "var(--bg-secondary)",
         border: "1px solid var(--glass-border)",
-        boxShadow: "var(--glass-shadow)"
+        boxShadow: "var(--glass-shadow)",
+        gap: "10px",
+        flexWrap: "wrap"
       }}>
-        <div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
           <h1 style={{ fontSize: "1.4rem", fontWeight: 700 }}>
             Sys<span className="text-gradient-solarpunk">map</span>
           </h1>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block" }}>
-            TecnoAncon Open-Core MVP
+            TecnoAncon Open-Core v1.0
           </span>
         </div>
 
-        {/* Login de Google / Avatar de Usuario */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          {authStatus === "loading" ? (
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>...</span>
-          ) : session ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {/* Botones de acción Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {/* CTA Leads B2B en navegación */}
+          <button
+            onClick={() => setShowLeadModal(true)}
+            className="glow-btn"
+            style={{
+              fontSize: "0.75rem",
+              padding: "8px 14px",
+              borderRadius: "var(--radius-sm)",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+          >
+            <span>¿Organizas un evento?</span>
+            <span className="desktop-only-inline">Destácalo aquí</span>
+          </button>
+
+          {/* GitHub Icon */}
+          <a
+            href="https://github.com/tecnoancon/sysmap"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "8px",
+              borderRadius: "var(--radius-sm)",
+              border: "1px solid var(--glass-border)",
+              backgroundColor: "var(--bg-tertiary)",
+              transition: "var(--transition-fast)"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#fff"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
+            title="Ver código fuente en GitHub"
+          >
+            <GithubIcon size={16} />
+          </a>
+
+          {/* Login de Google / Avatar de Usuario */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {authStatus === "loading" ? (
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>...</span>
+            ) : session ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <button
+                  onClick={() => setShowPrefPanel(!showPrefPanel)}
+                  style={{
+                    backgroundColor: showPrefPanel ? "hsl(var(--primary) / 0.2)" : "var(--bg-tertiary)",
+                    border: "1px solid var(--glass-border)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "8px",
+                    cursor: "pointer",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}
+                  title="Preferencias de Boletín"
+                >
+                  <Settings size={16} />
+                </button>
+                
+                {session.user?.image ? (
+                  <img
+                    src={session.user.image}
+                    alt={session.user.name || "User"}
+                    style={{ width: "32px", height: "32px", borderRadius: "var(--radius-full)", border: "1px solid var(--glass-border)" }}
+                  />
+                ) : (
+                  <div style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "var(--radius-full)",
+                    backgroundColor: "hsl(var(--primary))",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    color: "#fff"
+                  }}>
+                    {session.user?.name?.charAt(0) || "U"}
+                  </div>
+                )}
+                
+                <button
+                  onClick={() => signOut()}
+                  style={{
+                    backgroundColor: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--text-muted)",
+                    padding: "4px"
+                  }}
+                  title="Cerrar sesión"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
               <button
-                onClick={() => setShowPrefPanel(!showPrefPanel)}
+                onClick={() => signIn("google")}
                 style={{
-                  backgroundColor: showPrefPanel ? "hsl(var(--primary) / 0.2)" : "var(--bg-tertiary)",
-                  border: "1px solid var(--glass-border)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "0.8rem",
+                  padding: "8px 14px",
                   borderRadius: "var(--radius-sm)",
-                  padding: "8px",
-                  cursor: "pointer",
+                  backgroundColor: "var(--bg-tertiary)",
+                  border: "1px solid var(--glass-border)",
                   color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}
-                title="Preferencias de Boletín"
-              >
-                <Settings size={16} />
-              </button>
-              
-              {session.user?.image ? (
-                <img
-                  src={session.user.image}
-                  alt={session.user.name || "User"}
-                  style={{ width: "32px", height: "32px", borderRadius: "var(--radius-full)", border: "1px solid var(--glass-border)" }}
-                />
-              ) : (
-                <div style={{
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "var(--radius-full)",
-                  backgroundColor: "hsl(var(--primary))",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.85rem",
                   fontWeight: 600,
-                  color: "#fff"
-                }}>
-                  {session.user?.name?.charAt(0) || "U"}
-                </div>
-              )}
-              
-              <button
-                onClick={() => signOut()}
-                style={{
-                  backgroundColor: "transparent",
-                  border: "none",
                   cursor: "pointer",
-                  color: "var(--text-muted)",
-                  padding: "4px"
+                  transition: "var(--transition-fast)"
                 }}
-                title="Cerrar sesión"
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = "hsl(var(--primary))"}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--glass-border)"}
               >
-                <LogOut size={16} />
+                <LogIn size={14} /> Google Login
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => signIn("google")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                fontSize: "0.8rem",
-                padding: "8px 14px",
-                borderRadius: "var(--radius-sm)",
-                backgroundColor: "var(--bg-tertiary)",
-                border: "1px solid var(--glass-border)",
-                color: "#fff",
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "var(--transition-fast)"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.borderColor = "hsl(var(--primary))"}
-              onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--glass-border)"}
-            >
-              <LogIn size={14} /> Google Login
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </header>
+
+      {/* 1. HERO SECTION MINIMALISTA */}
+      <section style={{
+        padding: "36px 24px",
+        borderRadius: "var(--radius-lg)",
+        background: "radial-gradient(ellipse at top, hsl(var(--primary) / 0.08), transparent 70%)",
+        border: "1px solid var(--glass-border)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        gap: "12px",
+        animation: "fadeIn 0.5s ease-out"
+      }}>
+        <h1 style={{
+          fontSize: "1.85rem",
+          fontWeight: 800,
+          fontFamily: "var(--font-display)",
+          lineHeight: "1.25"
+        }}>
+          El radar de la comunidad tech en <span className="text-gradient-solarpunk">Buenos Aires</span>
+        </h1>
+        <p style={{
+          fontSize: "0.9rem",
+          color: "var(--text-secondary)",
+          maxWidth: "520px",
+          lineHeight: "1.65",
+          margin: "0 auto"
+        }}>
+          Descubre eventos locales de programación, diseño y tecnología. Operado de forma local-first, sostenible y comunitaria bajo la infraestructura de TecnoAncon.
+        </p>
+      </section>
 
       {/* Alerta de Error */}
       {error && (
@@ -427,7 +634,7 @@ export default function Home() {
               </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                 {POPULAR_TAGS.map(tag => {
-                  const isSelected = preferences.tags.includes(tag);
+                  const isSelected = preferences?.tags?.includes(tag) ?? false;
                   return (
                     <button
                       key={tag}
@@ -675,7 +882,7 @@ export default function Home() {
                 </h3>
                 <ImportEventBar 
                   apiBaseUrl={API_BASE_URL} 
-                  onImportSuccess={() => fetchEvents(coords?.lat, coords?.lon)} 
+                  onImportSuccess={() => fetchEvents()} 
                 />
               </div>
               {loading ? (
@@ -690,16 +897,55 @@ export default function Home() {
                   onEventSelect={(id) => setSelectedEventId((prev) => prev === id ? null : id)}
                   onTriggerIngest={handleTriggerIngest}
                   isIngesting={isIngesting}
+                  savedEventIds={savedEventIds}
+                  onToggleSave={handleToggleSave}
+                  hasActiveFilters={hasActiveFilters}
+                  apiBaseUrl={API_BASE_URL}
                 />
               )}
             </div>
 
             {/* Columna lateral de boletín + donación */}
             <div className={`col-sidebar ${activeTab === 'subscribe' ? 'mobile-visible' : 'mobile-hidden'}`}>
+              {/* 2. CAPTACIÓN LEADS B2B - SIDEBAR CTA (Liderando columna lateral derecha) */}
+              <div className="glass-panel" style={{
+                padding: "20px",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid hsl(var(--secondary) / 0.3)",
+                boxShadow: "0 8px 30px hsl(var(--secondary) / 0.05)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                marginBottom: "8px"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ fontSize: "1.35rem" }}>🚀</span>
+                  <h4 style={{ fontSize: "1rem", fontWeight: 700, color: "#fff", fontFamily: "var(--font-display)" }}>
+                    ¿Organizas un evento tech?
+                  </h4>
+                </div>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem", lineHeight: "1.4" }}>
+                  Promociona tu workshop, meetup o conferencia gratis en el radar y llega a toda la comunidad de Buenos Aires.
+                </p>
+                <button
+                  onClick={() => setShowLeadModal(true)}
+                  className="glow-btn"
+                  style={{
+                    padding: "11px",
+                    borderRadius: "var(--radius-md)",
+                    fontSize: "0.825rem",
+                    fontWeight: 700,
+                    width: "100%"
+                  }}
+                >
+                  Destácalo aquí
+                </button>
+              </div>
+
               <SubscriptionForm
                 apiBaseUrl={API_BASE_URL}
-                latitude={coords?.lat || null}
-                longitude={coords?.lon || null}
+                latitude={null}
+                longitude={null}
               />
               
               <ContributionSolidaria />
@@ -707,6 +953,221 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* 4. AUTORIDAD DE MARCA - EL FOOTER */}
+      <footer style={{
+        marginTop: "48px",
+        paddingTop: "24px",
+        borderTop: "1px solid var(--glass-border)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: "14px",
+        color: "var(--text-muted)",
+        fontSize: "0.8rem",
+        textAlign: "center"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          {/* GitHub Icon Footer */}
+          <a
+            href="https://github.com/tecnoancon/sysmap"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: "var(--text-muted)",
+              transition: "var(--transition-fast)",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#fff"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+          >
+            <GithubIcon size={15} /> GitHub
+          </a>
+          <span>•</span>
+          <a
+            href="https://cafecito.app/tecnoancon"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--text-muted)", transition: "var(--transition-fast)" }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#fff"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+          >
+            Cafecito
+          </a>
+          <span>•</span>
+          <a
+            href="https://ko-fi.com/tecnoancon"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--text-muted)", transition: "var(--transition-fast)" }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#fff"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-muted)"}
+          >
+            Ko-fi
+          </a>
+        </div>
+        <div>
+          <span>Construido y mantenido por </span>
+          <a
+            href="https://tecnoancon.com"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: "hsl(var(--primary))",
+              textDecoration: "none",
+              fontWeight: 600,
+              transition: "var(--transition-fast)"
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#fff"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "hsl(var(--primary))"}
+          >
+            TecnoAncon
+          </a>
+          <span>. © {new Date().getFullYear()} Todos los derechos reservados.</span>
+        </div>
+      </footer>
+
+      {/* MODAL CAPTACIÓN LEADS B2B */}
+      {showLeadModal && (
+        <div className="modal-backdrop" onClick={() => setShowLeadModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowLeadModal(false)}>
+              <X size={18} />
+            </button>
+            
+            <h3 style={{ fontSize: "1.25rem", marginBottom: "8px", fontFamily: "var(--font-display)" }}>
+              Destaca tu Evento Tech
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "20px", lineHeight: "1.4" }}>
+              Completa los datos y nuestro equipo de operaciones B2B se pondrá en contacto para destacar tu actividad en el radar.
+            </p>
+
+            {leadStatus === "success" ? (
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "30px 10px",
+                gap: "12px",
+                textAlign: "center"
+              }}>
+                <CheckCircle size={44} style={{ color: "hsl(var(--secondary))" }} />
+                <h4 style={{ fontSize: "1rem", fontWeight: 600 }}>¡Solicitud Recibida!</h4>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+                  Hemos registrado tus datos. Te contactaremos a la brevedad.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleLeadSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="form-label-premium">Nombre del Organizador</label>
+                  <input
+                    type="text"
+                    required
+                    className="form-input-premium"
+                    placeholder="Tu nombre completo"
+                    value={leadName}
+                    onChange={(e) => setLeadName(e.target.value)}
+                  />
+                </div>
+                
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="form-label-premium">Correo Electrónico</label>
+                  <input
+                    type="email"
+                    required
+                    className="form-input-premium"
+                    placeholder="organizador@empresa.com"
+                    value={leadEmail}
+                    onChange={(e) => setLeadEmail(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="form-label-premium">Compañía / Comunidad (Opcional)</label>
+                  <input
+                    type="text"
+                    className="form-input-premium"
+                    placeholder="Ej. TecnoAncon, Python BA"
+                    value={leadCompany}
+                    onChange={(e) => setLeadCompany(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="form-label-premium">Enlace del Evento (Opcional)</label>
+                  <input
+                    type="url"
+                    className="form-input-premium"
+                    placeholder="https://luma.lu/... o meetup.com/..."
+                    value={leadEventUrl}
+                    onChange={(e) => setLeadEventUrl(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  <label className="form-label-premium">Notas o Comentarios</label>
+                  <textarea
+                    className="form-input-premium"
+                    style={{ minHeight: "80px", resize: "vertical" }}
+                    placeholder="Cuéntanos brevemente sobre la actividad..."
+                    value={leadNotes}
+                    onChange={(e) => setLeadNotes(e.target.value)}
+                  />
+                </div>
+
+                {leadStatus === "error" && (
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    backgroundColor: "rgba(239, 68, 68, 0.1)",
+                    border: "1px solid rgba(239, 68, 68, 0.3)",
+                    borderRadius: "var(--radius-sm)",
+                    padding: "10px",
+                    color: "#fca5a5",
+                    fontSize: "0.75rem"
+                  }}>
+                    <AlertCircle size={16} style={{ flexShrink: 0 }} />
+                    <span>{leadError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={leadStatus === "submitting"}
+                  className="glow-btn"
+                  style={{
+                    padding: "14px",
+                    borderRadius: "var(--radius-md)",
+                    fontSize: "0.9rem",
+                    fontWeight: 700,
+                    marginTop: "6px",
+                    opacity: leadStatus === "submitting" ? 0.7 : 1
+                  }}
+                >
+                  {leadStatus === "submitting" ? "Enviando..." : "Enviar Solicitud"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TOAST SYSTEM */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast-notification toast-${toast.type}`}>
+            {toast.type === "success" && <CheckCircle size={18} style={{ color: "hsl(var(--secondary))" }} />}
+            {toast.type === "info" && <AlertCircle size={18} style={{ color: "hsl(var(--primary))" }} />}
+            {toast.type === "error" && <AlertCircle size={18} style={{ color: "#ef4444" }} />}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* CSS embebido para Layout Responsivo y Animaciones */}
       <style jsx global>{`
@@ -733,6 +1194,16 @@ export default function Home() {
           display: none !important;
         }
 
+        .desktop-only-inline {
+          display: inline;
+        }
+
+        @media (max-width: 600px) {
+          .desktop-only-inline {
+            display: none !important;
+          }
+        }
+
         @media (min-width: 768px) {
           .mobile-tabs {
             display: none !important;
@@ -757,4 +1228,3 @@ export default function Home() {
     </div>
   );
 }
-

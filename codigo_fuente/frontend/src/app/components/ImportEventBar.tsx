@@ -72,11 +72,11 @@ export function ImportEventBar({ apiBaseUrl, onImportSuccess }: ImportEventBarPr
           message: `Se importó "${data.event?.title || "Evento"}", pero fue clasificado como NO tecnológico, por lo que no aparecerá en la lista.`
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setStatus({
         type: "error",
-        message: err.message || "Error al conectar con el servidor."
+        message: err instanceof Error ? err.message : "Error al conectar con el servidor."
       });
     } finally {
       setLoading(false);

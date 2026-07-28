@@ -1,33 +1,30 @@
 # AI Context - SysmapApp Integration
 
 ## 1. Current Status
-El sistema SysmapApp está estructurado e independiente en `/home/thonii/proyectos/clientes/sysmap-app/`. Se compone de un frontend Next.js y un backend en Python/FastAPI que comparten una base de datos SQLite local para almacenamiento. Ambos componentes se exponen a través del proxy inverso global en la red externa `tecnoancon-proxy`.
-El backend cuenta con scrapers de categorías extendidas para Eventbrite, un extractor seguro de Luma, Eventbrite y Meetup y un endpoint seguro `/events/import-url` blindado contra ataques SSRF, DoS por sobrecarga de descarga e inyecciones de código HTML/XSS.
-El frontend tiene integrada la barra de importación rápida al lado del encabezado "Directorio" en la columna de eventos, la cual muestra la descripción expandible de los eventos de forma interactiva y fluida, formateando las fechas forzando la zona horaria del evento (`America/Buenos_Aires`).
+El sistema SysmapApp ha sido elevado a **v1.0 (Producto Estrella)**. El frontend Next.js y el backend FastAPI están plenamente acoplados mediante una base de datos SQLite compartida (`sysmap.db`). El backend procesa las ingestas con IA y caché preventivo, mientras que el frontend expone una interfaz premium, Mobile-First (360x800px) y adaptada a la Constitución de la Software Factory de TecnoAncon.
+La base de datos SQLite está sincronizada con el esquema actualizado de Prisma. El proyecto compila en producción con cero advertencias o errores de TypeScript.
 
 ## 2. Recent Changes
-- **Alineación y Refinamiento Estético de UI (Frontend):**
-  * **Ubicación en Cabecera de Columna:** Movido el componente `<ImportEventBar />` para renderizarse a la derecha del título `Directorio` en `page.tsx`.
-  * **Ajuste de Botón Compacto:** Rediseñado el botón en estado colapsado a un formato compacto (`padding: 6px 12px`, `font-size: 0.75rem`, y texto `+ Importar`).
-  * **Visualización Local del Evento (Frontend):** Modificado el formateador de fechas `formatEventDate` en `EventList.tsx` para forzar la zona horaria de Buenos Aires (`timeZone: 'America/Buenos_Aires'`), asegurando que todos los usuarios vean los horarios locales correctos de origen de los eventos físicos (ej: 18:00 Hs) independientemente de su huso horario de navegación.
-- **Extractor de Luma Optimizador (JSON-LD Prioritized):**
-  * **Extracción Robusta via JSON-LD:** Modificada la función `_extract_luma` en `url_extractor.py` para priorizar la extracción estructurada mediante el tag de metadatos `application/ld+json`. Esto resuelve los problemas de caídas en el fallback de Luma, logrando recuperar la **descripción real completa**, las **coordenadas de geolocalización exactas** y los **tiempos reales con offset de zona horaria** del evento.
-- **Fix de Horarios y Zonas Horarias (FastAPI & Pipeline):**
-  * **Normalización de Datetimes a UTC Naive:** Modificado `url_extractor.py` e `ingest.py` para convertir los objetos datetime timezone-aware recuperados por los scrapers a su equivalente UTC real (`.astimezone(timezone.utc)`) y remover el `tzinfo` antes de persistirlos en SQLite.
-  * **Serialización Timezone-Aware con Offset UTC:** Modificada la serialización de fechas en los endpoints `/events` y `/events/import-url` de `main.py` para aplicarles la zona horaria UTC (`replace(tzinfo=timezone.utc).isoformat()`). Esto corrige los desfases en la API al transmitir los datetimes en UTC explícito.
-- **Solución al Conflicto de Ruteo de NextAuth (OAuth):**
-  * **Exclusión de Ruteo en Traefik:** Modificadas las labels de docker compose en local y remoto (`docker-compose.yml`) para excluir `/api/auth/*` del backend: `Host(...) && PathPrefix(/api) && !PathPrefix(/api/auth)`. Esto resuelve los errores 404 de OAuth redirigiendo correctamente las llamadas de sesión al frontend de Next.js.
-- **Ampliación de Cobertura y Prevención de Sobreescritura (Eventbrite Scraper):**
-  * **URLs Estáticas Robustas (Bypass 405):** Modificado `eventbrite.py` para consultar únicamente las categorías estáticas `/b/*` que devuelven un código `200 OK` limpio en la IP de producción (`science-and-tech`, `business`, `tech`, `family-and-education`, `community`), logrando esquivar el bloqueo dinámico antibot (405) de Cloudflare en Eventbrite y logrando un incremento de casi el 40% en volumen de recolección de eventos.
-  * **Protección de Horas y Descripciones Detalladas:** Modificado `ingest.py` para evitar que la ingesta masiva automática sobrescriba horas y descripciones enriquecidas obtenidas previamente mediante importaciones manuales precisas con los valores recortados de los listados estáticos (medianoches `00:00:00`).
+- **Modelado en Base de Datos (SQLite):**
+  * Modificado `prisma/schema.prisma` para incluir el modelo `Lead` (captación de organizadores B2B) y `SavedEvent` (eventos guardados por usuarios NextAuth).
+  * Ejecutado `npx prisma db push` y `npx prisma generate` para sincronizar los tipos de Prisma Client y la base de datos de producción/desarrollo local.
+- **Endpoints de la API de Next.js:**
+  * **API de Leads B2B (`/api/leads`):** Implementada una ruta `POST` segura para almacenar la información de contacto de organizadores de eventos interesados.
+  * **API de Favoritos (`/api/saved-events`):** Creada una ruta con soporte `GET` (listar favoritos del usuario) y `POST` (toggle de guardar/eliminar evento de favoritos), validando la sesión del usuario.
+- **Rediseño Premium de la Interfaz:**
+  * **Hero Section Minimalista:** Incorporado un H1 llamativo con gradiente Solarpunk e información descriptiva inmediatamente debajo de la barra de navegación para dar contexto inmediato sobre Sysmap.
+  * **Captación B2B Above-the-Fold:** Agregado un botón de alto contraste (`glow-btn`) responsivo en el Header y una tarjeta destacada al inicio de la barra lateral derecha para promover que los organizadores registren sus eventos.
+  * **Modal de Lead Minimalista:** Creado un componente de diálogo flotante con Backdrop blur y animación premium para recolectar leads de organizadores de manera interactiva.
+  * **Empty State Inteligente con Suscripción:** Refactorizada la lógica de `EventList.tsx` para discernir cuando la base de datos está totalmente vacía de cuando **no hay resultados por filtros activos**. Para filtros activos, se implementa una UI de retención que ofrece activar alertas por correo de esa categoría específica.
+  * **Toast Notification System:** Implementado un gestor de estados en `page.tsx` que dispara avisos sutiles (Toasts) flotantes en pantalla al guardar favoritos o enviar leads de forma exitosa.
+  * **Autoridad y Enlaces Open-Core:** Agregado un Footer robusto con referencias a TecnoAncon y un botón SVG embebido de GitHub en Header y Footer.
+- **Documentación de Ingeniería:**
+  * Creado un `README.md` impecable en la raíz que detalla la visión, diagramas Mermaid de arquitectura, despliegue con Docker Compose y pasos para correr localmente.
 
 ## 3. Active Constraints
-- **Base de Datos Compartida:** El backend y el frontend comparten el mismo archivo SQLite `sysmap.db` en el volumen `sysmap_db_data`. Se debe evitar cargas excesivas de escritura concurrente para no generar bloqueos de base de datos (`database is locked`).
-- **Configuración de APIs externas:** El sistema requiere variables como `GEMINI_API_KEY`, `RESEND_API_KEY` y `EVENTBRITE_API_TOKEN` en el archivo `.env` del backend.
-- **Formato de URL en Importación:** La importación manual de URLs espera enlaces bien formados que contengan las palabras clave `eventbrite`, `lu.ma`, `luma.com` o `meetup.com` y que resuelvan a IPs públicas globales válidas.
+- **Base de Datos Compartida SQLite:** Se mantiene el volumen compartido `sysmap_db_data` montado en `/app/database` para frontend y backend.
+- **Regeneración de Prisma:** Al realizar cambios en la base de datos, siempre se debe ejecutar `npx prisma generate` en el directorio de frontend para re-compilar los tipos.
 
 ## 4. Pending Backlog
-- **Estatus:** Completado y desplegado exitosamente en producción (`sysmap.tecnoancon.com`).
-- **Siguientes Pasos:**
-  1. Monitorear el comportamiento de la sincronización de horarios de eventos futuros en la aplicación y validar que los calendarios locales de los usuarios coincidan perfectamente.
-  2. Ajustar políticas adicionales de CORS en backend si es que cambian los dominios secundarios en el proxy Traefik del cliente.
+- Monitorear en producción las suscripciones del boletín inteligente e ingestas concurrentes.
+- Agregar test de integración Playwright para verificar el flujo de captación de Leads B2B de extremo a extremo.

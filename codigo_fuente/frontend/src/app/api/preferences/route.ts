@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await getServerSession(authOptions);
   
-  if (!session || !session.user || !(session.user as any).id) {
+  if (!session || !session.user || !(session.user as { id?: string }).id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id;
+  const userId = (session.user as { id: string }).id;
 
   try {
     const preferences = await prisma.userPreference.findUnique({
@@ -43,11 +43,11 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session || !session.user || !(session.user as any).id) {
+  if (!session || !session.user || !(session.user as { id?: string }).id) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id;
+  const userId = (session.user as { id: string }).id;
 
   try {
     const { tags, radiusKm, latitude, longitude } = await request.json();

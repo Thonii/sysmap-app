@@ -97,6 +97,7 @@ model User {
   accounts      Account[]
   sessions      Session[]
   preferences   UserPreference?
+  savedEvents   SavedEvent[]
 
   @@map("users")
 }
@@ -121,3 +122,27 @@ model UserPreference {
 
   @@map("user_preferences")
 }
+
+model Lead {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  company   String?
+  eventUrl  String?  @map("event_url")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("leads")
+}
+
+model SavedEvent {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  eventId   String   @map("event_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@map("saved_events")
+}
+

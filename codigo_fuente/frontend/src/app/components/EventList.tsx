@@ -1,7 +1,7 @@
 "use client";
 
-import React from 'react';
-import { Calendar, MapPin, ExternalLink, Map, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Calendar, MapPin, ExternalLink, Map, RefreshCw, Bookmark, Mail, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface EventData {
   id: string;
@@ -24,6 +24,10 @@ interface EventListProps {
   onEventSelect: (id: string) => void;
   onTriggerIngest?: () => void;
   isIngesting?: boolean;
+  savedEventIds?: string[];
+  onToggleSave?: (eventId: string) => void;
+  hasActiveFilters?: boolean;
+  apiBaseUrl?: string;
 }
 
 export const EventList: React.FC<EventListProps> = ({
@@ -31,8 +35,51 @@ export const EventList: React.FC<EventListProps> = ({
   selectedEventId,
   onEventSelect,
   onTriggerIngest,
-  isIngesting = false
+  isIngesting = false,
+  savedEventIds = [],
+  onToggleSave,
+  hasActiveFilters = false,
+  apiBaseUrl = ''
 }) => {
+  // Estado para el formulario de suscripción rápida en Empty State
+  const [emptyStateEmail, setEmptyStateEmail] = useState('');
+  const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [subMessage, setSubMessage] = useState('');
+
+  const handleQuickSubscribe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emptyStateEmail) return;
+
+    setSubStatus('loading');
+    try {
+      const params = new URLSearchParams({
+        email: emptyStateEmail,
+        preference_channel: 'email',
+        radius_km: '15',
+        city: 'Buenos Aires'
+      });
+
+      const response = await fetch(`${apiBaseUrl}/subscriptions?${params.toString()}`, {
+        method: 'POST'
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSubStatus('success');
+        setSubMessage('¡Alerta de categoría activada con éxito!');
+        setEmptyStateEmail('');
+      } else {
+        setSubStatus('error');
+        setSubMessage(data.detail || 'Ocurrió un error al procesar la suscripción.');
+      }
+    } catch (error) {
+      console.error(error);
+      setSubStatus('error');
+      setSubMessage('No se pudo conectar con el servidor.');
+    }
+  };
+
   const getPlatformStyle = (platform: string) => {
     switch (platform.toLowerCase()) {
       case 'luma':
@@ -84,6 +131,123 @@ export const EventList: React.FC<EventListProps> = ({
   };
 
   if (events.length === 0) {
+    if (hasActiveFilters) {
+      // 3. RETENCIÓN: Empty State para filtros activos
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '40px 20px',
+          textAlign: 'center',
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--glass-shadow)',
+          gap: '20px',
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: 'hsl(var(--primary) / 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'hsl(var(--primary))'
+          }}>
+            <Mail size={24} />
+          </div>
+          <div>
+            <h4 style={{ fontSize: '1.1rem', marginBottom: '8px', color: '#fff', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+              No encontramos eventos para esta categoría
+            </h4>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', maxWidth: '340px', margin: '0 auto', lineHeight: '1.5' }}>
+              No hay actividades programadas con los criterios seleccionados. ¡Activa una alerta y te avisaremos apenas surjan novedades!
+            </p>
+          </div>
+
+          {subStatus === 'success' ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              backgroundColor: 'hsl(var(--secondary) / 0.1)',
+              border: '1px solid hsl(var(--secondary) / 0.2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 16px',
+              color: '#fff',
+              fontSize: '0.8rem',
+              animation: 'fadeIn 0.25s ease-out'
+            }}>
+              <CheckCircle size={16} style={{ color: 'hsl(var(--secondary))' }} />
+              <span>{subMessage}</span>
+            </div>
+          ) : (
+            <form onSubmit={handleQuickSubscribe} style={{
+              display: 'flex',
+              gap: '8px',
+              width: '100%',
+              maxWidth: '360px',
+              flexDirection: 'column'
+            }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="email"
+                  required
+                  placeholder="Tu correo electrónico..."
+                  value={emptyStateEmail}
+                  onChange={(e) => setEmptyStateEmail(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: 'var(--radius-md)',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    outline: 'none'
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={subStatus === 'loading'}
+                  className="glow-btn"
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {subStatus === 'loading' ? 'Activando...' : 'Alertarme'}
+                </button>
+              </div>
+
+              {subStatus === 'error' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#fca5a5',
+                  fontSize: '0.75rem',
+                  marginTop: '4px',
+                  justifyContent: 'center'
+                }}>
+                  <AlertCircle size={14} />
+                  <span>{subMessage}</span>
+                </div>
+              )}
+            </form>
+          )}
+        </div>
+      );
+    }
+
+    // Default: DB vacía
     return (
       <div style={{
         display: 'flex',
@@ -147,6 +311,7 @@ export const EventList: React.FC<EventListProps> = ({
       {events.map((event) => {
         const isSelected = event.id === selectedEventId;
         const style = getPlatformStyle(event.source_platform);
+        const isSaved = savedEventIds.includes(event.id);
         
         return (
           <div
@@ -179,19 +344,45 @@ export const EventList: React.FC<EventListProps> = ({
                 {style.label}
               </span>
               
-              {event.distance_km !== null && (
-                <span style={{
-                  fontSize: '0.725rem',
-                  fontWeight: 600,
-                  color: 'hsl(var(--secondary))',
-                  backgroundColor: 'hsl(var(--secondary) / 0.1)',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid hsl(var(--secondary) / 0.2)'
-                }}>
-                  📍 a {event.distance_km} km
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {event.distance_km !== null && (
+                  <span style={{
+                    fontSize: '0.725rem',
+                    fontWeight: 600,
+                    color: 'hsl(var(--secondary))',
+                    backgroundColor: 'hsl(var(--secondary) / 0.1)',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid hsl(var(--secondary) / 0.2)'
+                  }}>
+                    📍 a {event.distance_km} km
+                  </span>
+                )}
+
+                {/* Botón Guardar Evento (NextAuth) */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToggleSave) onToggleSave(event.id);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    color: isSaved ? 'hsl(var(--primary))' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '6px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: isSaved ? 'hsl(var(--primary) / 0.1)' : 'transparent',
+                    border: isSaved ? '1px solid hsl(var(--primary) / 0.2)' : '1px solid transparent',
+                    transition: 'var(--transition-fast)'
+                  }}
+                  title={isSaved ? "Quitar de guardados" : "Guardar evento"}
+                >
+                  <Bookmark size={15} fill={isSaved ? 'hsl(var(--primary))' : 'none'} />
+                </button>
+              </div>
             </div>
 
             {/* Título del Evento */}
@@ -342,3 +533,4 @@ export const EventList: React.FC<EventListProps> = ({
     </div>
   );
 };
+;
