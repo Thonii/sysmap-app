@@ -19,7 +19,7 @@ services:
       - tecnoancon-proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.sysmap_backend.rule=Host(`${SYSMAP_HOST}`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.sysmap_backend.rule=Host(`${SYSMAP_HOST}`) && PathPrefix(`/api`) && !PathPrefix(`/api/auth`) && !PathPrefix(`/api/preferences`) && !PathPrefix(`/api/saved-events`) && !PathPrefix(`/api/leads`)"
       - "traefik.http.routers.sysmap_backend.entrypoints=websecure"
       - "traefik.http.routers.sysmap_backend.tls=true"
       - "traefik.http.routers.sysmap_backend.tls.certresolver=letsencrypt"

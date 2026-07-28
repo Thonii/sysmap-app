@@ -11,6 +11,8 @@ La base de datos SQLite está sincronizada con el esquema actualizado de Prisma.
 - **Endpoints de la API de Next.js:**
   * **API de Leads B2B (`/api/leads`):** Implementada una ruta `POST` segura para almacenar la información de contacto de organizadores de eventos interesados.
   * **API de Favoritos (`/api/saved-events`):** Creada una ruta con soporte `GET` (listar favoritos del usuario) y `POST` (toggle de guardar/eliminar evento de favoritos), validando la sesión del usuario.
+- **Resolución de Ruteo en Traefik (docker-compose.yml):**
+  * Excluidas las rutas de API del frontend (`/api/preferences`, `/api/saved-events`, `/api/leads`) en la regla de enrutamiento del backend de Traefik para evitar que intercepte y retorne 404 en las llamadas de Next.js.
 - **Rediseño Premium de la Interfaz:**
   * **Hero Section Minimalista:** Incorporado un H1 llamativo con gradiente Solarpunk e información descriptiva inmediatamente debajo de la barra de navegación para dar contexto inmediato sobre Sysmap.
   * **Captación B2B Above-the-Fold:** Agregado un botón de alto contraste (`glow-btn`) responsivo en el Header y una tarjeta destacada al inicio de la barra lateral derecha para promover que los organizadores registren sus eventos.
