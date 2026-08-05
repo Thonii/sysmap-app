@@ -1,6 +1,7 @@
 import logging
 import json
 import re
+import hashlib
 from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup
@@ -82,7 +83,7 @@ def scrape_eventbrite_html_public() -> list[dict]:
                         continue
                     
                     match = re.search(r"-tickets-(\d+)", source_url) or re.search(r"/e/.*?(\d+)", source_url) or re.search(r"/e/(\d+)", source_url)
-                    source_id = match.group(1) if match else str(hash(source_url))
+                    source_id = match.group(1) if match else hashlib.md5(source_url.encode()).hexdigest()[:15]
                     
                     # Fechas
                     start_str = event_data.get("startDate")
@@ -180,7 +181,7 @@ def scrape_eventbrite_cards_fallback(soup: BeautifulSoup) -> list[dict]:
             title = title_el.text.strip() if title_el else "Evento Eventbrite"
             
             match = re.search(r"/e/.*?(\d+)", href)
-            source_id = match.group(1) if match else "hash_" + str(hash(href))
+            source_id = match.group(1) if match else hashlib.md5(href.encode()).hexdigest()[:15]
             
             events.append({
                 "title": title,

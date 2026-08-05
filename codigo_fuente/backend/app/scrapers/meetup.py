@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import hashlib
 from datetime import datetime
 import httpx
 from bs4 import BeautifulSoup

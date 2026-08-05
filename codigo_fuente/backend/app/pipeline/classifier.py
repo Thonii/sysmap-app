@@ -122,7 +122,7 @@ def process_and_classify_event(db: Session, title: str, description: str) -> tup
         return cached_result.get("is_tech", True), cached_result.get("tags", [])
 
     # 3. Clasificación con IA
-    logger.info(f"Llamando a Gemini 1.5 Flash para clasificar: '{title}'")
+    logger.info(f"Llamando al clasificador IA configurado ({classifier_instance.model_name}) para clasificar: '{title}'")
     ia_result = classify_event_with_ia(title, description)
     
     # Guardar en caché
